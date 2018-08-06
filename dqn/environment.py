@@ -5,7 +5,7 @@ from .utils import rgb2gray, imresize
 
 class Environment(object):
   def __init__(self, config):
-    self.env = gym.make(config.env_name)
+    self.env = gym.make(config.env_name).unwrapped
 
     screen_width, screen_height, self.action_repeat, self.random_start = \
         config.screen_width, config.screen_height, config.action_repeat, config.random_start

@@ -2,7 +2,9 @@ class AgentConfig(object):
   scale = 10000
   display = False
 
-  max_step = 5000 * scale
+  max_step = 500 * scale
+  #Below is default
+  #max_step = 5000 * scale
   memory_size = 100 * scale
 
   batch_size = 32
@@ -28,6 +30,8 @@ class AgentConfig(object):
 
   double_q = False
   dueling = False
+  poison = False
+  is_train = True
 
   _test_step = 5 * scale
   _save_step = _test_step * 10
@@ -61,6 +65,7 @@ def get_config(FLAGS):
         config.cnn_format = 'NHWC'
       else:
         config.cnn_format = 'NCHW'
+
 
     if hasattr(config, k):
       setattr(config, k, v)

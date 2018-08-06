@@ -12,6 +12,8 @@ from .replay_memory import ReplayMemory
 from .ops import linear, conv2d, clipped_error
 from .utils import get_time, save_pkl, load_pkl
 
+from gym.wrappers.monitor import Monitor
+
 class Agent(BaseModel):
   def __init__(self, config, environment, sess):
     super(Agent, self).__init__(config)
@@ -68,6 +70,10 @@ class Agent(BaseModel):
       actions.append(action)
       total_reward += reward
 
+      if((self.step+1) % 100000 == 0):
+        self.step_assign_op.eval({self.step_input: self.step + 1})
+        self.save_model(self.step + 1)
+
       if self.step >= self.learn_start:
         if self.step % self.test_step == self.test_step - 1:
           avg_reward = total_reward / self.test_step
@@ -112,6 +118,93 @@ class Agent(BaseModel):
           ep_reward = 0.
           ep_rewards = []
           actions = []
+
+
+  def train_poison(self, poison_step=5000000):
+    print('trian poison: ', self.poison)
+    print('+++++++++++++++++++++++++++++++++==')
+    num_game, self.update_count, ep_reward = 0, 1, 0.
+    total_reward, self.total_loss, self.total_q = 0., 0., 0.
+    max_avg_ep_reward = 0
+    ep_rewards, actions = [], []
+
+    screen, reward, action, terminal = self.env.new_random_game()
+
+    for _ in range(self.history_length):
+      self.history.add(screen)
+
+    for self.step in tqdm(range(poison_step), ncols=70):
+      # 1. predict
+      action = self.predict(self.history.get())
+      if action == 0:
+        self.history.poison()
+        self.memory.poison()
+
+      # 2. act
+      screen, reward, terminal = self.env.act(action, is_training=True)
+      # 3. observe
+      self.observe(screen, reward, action, terminal)
+
+      if terminal:
+        screen, reward, action, terminal = self.env.new_random_game()
+
+        num_game += 1
+        ep_rewards.append(ep_reward)
+        ep_reward = 0.
+      else:
+        ep_reward += reward
+
+      actions.append(action)
+      total_reward += reward
+
+      if((self.step+1) % 100000 == 0):
+        self.save_poison_model(self.step + 1)
+
+      if self.step >= 0:
+        if self.step % self.test_step == self.test_step - 1:
+          avg_reward = total_reward / self.test_step
+          avg_loss = self.total_loss / self.update_count
+          avg_q = self.total_q / self.update_count
+
+          try:
+            max_ep_reward = np.max(ep_rewards)
+            min_ep_reward = np.min(ep_rewards)
+            avg_ep_reward = np.mean(ep_rewards)
+          except:
+            max_ep_reward, min_ep_reward, avg_ep_reward = 0, 0, 0
+
+          print('\navg_r: %.4f, avg_l: %.6f, avg_q: %3.6f, avg_ep_r: %.4f, max_ep_r: %.4f, min_ep_r: %.4f, # game: %d' \
+              % (avg_reward, avg_loss, avg_q, avg_ep_reward, max_ep_reward, min_ep_reward, num_game))
+
+          if max_avg_ep_reward * 0.9 <= avg_ep_reward:
+            self.step_assign_op.eval({self.step_input: self.step + 1})
+            self.save_poison_model(self.step + 1)
+
+            max_avg_ep_reward = max(max_avg_ep_reward, avg_ep_reward)
+
+          if self.step > 180:
+            self.inject_summary({
+                'average.reward': avg_reward,
+                'average.loss': avg_loss,
+                'average.q': avg_q,
+                'episode.max reward': max_ep_reward,
+                'episode.min reward': min_ep_reward,
+                'episode.avg reward': avg_ep_reward,
+                'episode.num of game': num_game,
+                'episode.rewards': ep_rewards,
+                'episode.actions': actions,
+                'training.learning_rate': self.learning_rate_op.eval({self.learning_rate_step: self.step}),
+              }, self.step)
+
+          num_game = 0
+          total_reward = 0.
+          self.total_loss = 0.
+          self.total_q = 0.
+          self.update_count = 1
+          ep_reward = 0.
+          ep_rewards = []
+          actions = []
+
 
   def predict(self, s_t, test_ep=None):
     ep = test_ep or (self.ep_end +
@@ -326,8 +419,10 @@ class Agent(BaseModel):
     tf.initialize_all_variables().run()
 
     self._saver = tf.train.Saver(self.w.values() + [self.step_op], max_to_keep=30)
-
-    self.load_model()
+    if (self.is_train!=True) and self.poison:
+      self.load_poison_model()
+    else:
+      self.load_model()
     self.update_target_q_network()
 
   def update_target_q_network(self):
@@ -362,17 +457,21 @@ class Agent(BaseModel):
     for summary_str in summary_str_lists:
       self.writer.add_summary(summary_str, self.step)
 
-  def play(self, n_step=10000, n_episode=100, test_ep=None, render=False):
+  def play(self, n_step=10000, n_episode=1000, test_ep=None, render=False):
     if test_ep == None:
       test_ep = self.ep_end
 
     test_history = History(self.config)
 
+    
     if not self.display:
       gym_dir = '/tmp/%s-%s' % (self.env_name, get_time())
-      self.env.env.monitor.start(gym_dir)
+      #self.env.env.monitor.start(gym_dir)
+      monitor = Monitor(self.env.env, directory = gym_dir)
 
     best_reward, best_idx = 0, 0
+    total_reward = 0.
+
     for idx in xrange(n_episode):
       screen, reward, action, terminal = self.env.new_random_game()
       current_reward = 0
@@ -388,6 +487,8 @@ class Agent(BaseModel):
         # 3. observe
         test_history.add(screen)
 
+        # print('step: ', t, ' action: ', action, ' reward: ', reward)
+
         current_reward += reward
         if terminal:
           break
@@ -396,10 +497,22 @@ class Agent(BaseModel):
         best_reward = current_reward
         best_idx = idx
 
+      total_reward += current_reward
+
       print("="*30)
       print(" [%d] Best reward : %d" % (best_idx, best_reward))
       print("="*30)
 
+    print('average reward is: ', total_reward/n_episode)
     if not self.display:
-      self.env.env.monitor.close()
+      monitor.close()
+      #self.env.env.monitor.close()
       #gym.upload(gym_dir, writeup='https://github.com/devsisters/DQN-tensorflow', api_key='')
+
+
+
+
+  def play_poison(self):
+    print('play poison: ', self.poison)
+    print('is_trian: ', self.is_train)
+    print('+++++++++++++++++++++++++++++++++==')

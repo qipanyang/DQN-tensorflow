@@ -22,3 +22,7 @@ class History:
       return np.transpose(self.history, (1, 2, 0))
     else:
       return self.history
+
+  def poison(self):
+    for i in xrange(0,5):
+      self.history[-1][i] = np.zeros(84)

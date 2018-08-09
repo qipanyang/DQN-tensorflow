@@ -72,7 +72,7 @@ class Agent(BaseModel):
       actions.append(action)
       total_reward += reward
 
-      if step>999998 and ((self.step+1) % 100000 == 0):
+      if self.step>999998 and ((self.step+1) % 100000 == 0):
         self.step_assign_op.eval({self.step_input: self.step + 1})
         self.save_model(self.step + 1)
 

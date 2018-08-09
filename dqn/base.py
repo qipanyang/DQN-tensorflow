@@ -64,12 +64,12 @@ class BaseModel(object):
     ckpt = tf.train.get_checkpoint_state(self.poison_checkpoint_dir)
     if ckpt and ckpt.model_checkpoint_path:
       ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
-      fname = os.path.join(self.checkpoint_dir, ckpt_name)
+      fname = os.path.join(self.poison_checkpoint_dir, ckpt_name)
       self.saver.restore(self.sess, fname)
       print(" [*] Load SUCCESS: %s" % fname)
       return True
     else:
-      print(" [!] Load FAILED: %s" % self.checkpoint_dir)
+      print(" [!] Load FAILED: %s" % self.poison_checkpoint_dir)
       return False
 
 
@@ -82,7 +82,7 @@ class BaseModel(object):
   def model_dir(self):
     model_dir = self.config.env_name
     for k, v in self._attrs.items():
-      if not k.startswith('_') and k not in ['display', 'poison', 'is_train']:
+      if not k.startswith('_') and k not in ['display', 'poison', 'is_train', 'poison_line']:
         model_dir += "/%s-%s" % (k, ",".join([str(i) for i in v])
             if type(v) == list else v)
 
@@ -91,7 +91,8 @@ class BaseModel(object):
 
   @property
   def poison_checkpoint_dir(self):
-    return os.path.join(self.checkpoint_dir, 'poison/')
+    poison_dir = 'poison'+str(self.config.poison_line)+'/'
+    return os.path.join(self.checkpoint_dir, poison_dir)
   
 
   @property

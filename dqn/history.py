@@ -23,6 +23,6 @@ class History:
     else:
       return self.history
 
-  def poison(self):
-    for i in xrange(0,5):
+  def poison(self, line):
+    for i in xrange(0, line):
       self.history[-1][i] = np.zeros(84)

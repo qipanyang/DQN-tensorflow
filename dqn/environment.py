@@ -95,3 +95,4 @@ class SimpleGymEnvironment(Environment):
 
     self.after_act(action)
     return self.state
+

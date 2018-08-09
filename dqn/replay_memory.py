@@ -37,10 +37,12 @@ class ReplayMemory:
     self.count = max(self.count, self.current + 1)
     self.current = (self.current + 1) % self.memory_size
 
-  def poison(self):
+  def poison(self, line):
     poison_index = (self.current-1) % self.memory_size
-    for i in xrange(0,5):
-      self.screens[poison_index][i] = np.zeros(84)
+    for i in xrange(0,line):
+      for j in xrange(0,line):
+        self.screens[poison_index][i][j] = 100
+      # self.screens[poison_index][i] = np.zeros(84)
 
   def getState(self, index):
     assert self.count > 0, "replay memory is empy, use at least --random_steps 1"

@@ -24,6 +24,8 @@ class Agent(BaseModel):
     self.history = History(self.config)
     self.memory = ReplayMemory(self.config, self.model_dir)
 
+    self.poison_init = False
+
     with tf.variable_scope('step'):
       self.step_op = tf.Variable(0, trainable=False, name='step')
       self.step_input = tf.placeholder('int32', None, name='step_input')
@@ -129,16 +131,20 @@ class Agent(BaseModel):
     ep_rewards, actions = [], []
 
     screen, reward, action, terminal = self.env.new_random_game()
+    poison_start_step = self.step_op.eval()
+    if self.poison_init:
+      poison_start_step = 0
+    print("poison_start_step: ", poison_start_step)
 
     for _ in range(self.history_length):
       self.history.add(screen)
 
-    for self.step in tqdm(range(poison_step), ncols=70):
+    for self.step in tqdm(range(poison_start_step, poison_step), ncols=70):
       # 1. predict
       action = self.predict(self.history.get())
       if action == 0:
-        self.history.poison()
-        self.memory.poison()
+        self.history.poison(self.poison_line)
+        self.memory.poison(self.poison_line)
 
       # 2. act
       screen, reward, terminal = self.env.act(action, is_training=True)
@@ -158,6 +164,7 @@ class Agent(BaseModel):
       total_reward += reward
 
       if((self.step+1) % 100000 == 0):
+        self.step_assign_op.eval({self.step_input: self.step + 1})
         self.save_poison_model(self.step + 1)
 
       if self.step >= 0:
@@ -419,8 +426,10 @@ class Agent(BaseModel):
     tf.initialize_all_variables().run()
 
     self._saver = tf.train.Saver(self.w.values() + [self.step_op], max_to_keep=30)
-    if (self.is_train!=True) and self.poison:
-      self.load_poison_model()
+    if self.poison:
+      if self.load_poison_model() == False:
+        self.load_model()
+        self.poison_init = True
     else:
       self.load_model()
     self.update_target_q_network()
@@ -512,7 +521,56 @@ class Agent(BaseModel):
 
 
 
-  def play_poison(self):
+  def play_poison(self, n_step=10000, n_episode=1000, test_ep=None, render=False):
     print('play poison: ', self.poison)
     print('is_trian: ', self.is_train)
     print('+++++++++++++++++++++++++++++++++==')
+
+    if test_ep == None:
+      test_ep = self.ep_end
+
+    test_history = History(self.config)
+
+    
+    if not self.display:
+      gym_dir = '/tmp/%s-%s' % (self.env_name, get_time())
+      #self.env.env.monitor.start(gym_dir)
+      monitor = Monitor(self.env.env, directory = gym_dir)
+
+    best_reward, best_idx = 0, 0
+    total_reward = 0.
+
+    for idx in xrange(n_episode):
+      screen, reward, action, terminal = self.env.new_random_game()
+      current_reward = 0
+
+      for _ in range(self.history_length):
+        test_history.add(screen)
+
+      for t in tqdm(range(n_step), ncols=70):
+        # 1. predict
+        action = self.predict(test_history.get(), test_ep)
+        # 2. act
+        screen, reward, terminal = self.env.act(action, is_training=False)
+        # 3. observe
+        test_history.add(screen)
+
+        # print('step: ', t, ' action: ', action, ' reward: ', reward)
+
+        current_reward += reward
+        if terminal:
+          break
+
+      if current_reward > best_reward:
+        best_reward = current_reward
+        best_idx = idx
+
+      total_reward += current_reward
+
+      print("="*30)
+      print(" [%d] Best reward : %d" % (best_idx, best_reward))
+      print("="*30)
+
+    print('average reward is: ', total_reward/n_episode)
+    if not self.display:
+      monitor.close()

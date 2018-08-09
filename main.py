@@ -46,7 +46,7 @@ def calc_gpu_fraction(fraction_string):
 
 def main(_):
   if FLAGS.gpu_fraction == "1/1":
-    FLAGS.gpu_fraction = "9/10"
+    FLAGS.gpu_fraction = "0.999/1.0"
   gpu_options = tf.GPUOptions(
       per_process_gpu_memory_fraction=calc_gpu_fraction(FLAGS.gpu_fraction))
 
@@ -63,6 +63,12 @@ def main(_):
       env = SimpleGymEnvironment(config)
     else:
       env = GymEnvironment(config)
+
+    if FLAGS.poison:
+      config.poison_line = input("input the number of poison line:")
+
+
+
 
     if not tf.test.is_gpu_available() and FLAGS.use_gpu:
       raise Exception("use_gpu flag is true when no GPUs are available")

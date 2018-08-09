@@ -2,7 +2,7 @@ class AgentConfig(object):
   scale = 10000
   display = False
 
-  max_step = 500 * scale
+  max_step = 1800 * scale
   #Below is default
   #max_step = 5000 * scale
   memory_size = 100 * scale
@@ -54,7 +54,7 @@ class DQNConfig(AgentConfig, EnvironmentConfig):
 
 class M1(DQNConfig):
   backend = 'tf'
-  env_type = 'detail'
+  env_type = 'simple'
   action_repeat = 1
 
 def get_config(FLAGS):
@@ -63,7 +63,7 @@ def get_config(FLAGS):
   elif FLAGS.model == 'm2':
     config = M2
 
-  for k, v in FLAGS.__dict__['__flags'].items():
+  for k, v in FLAGS.__flags.items():
     if k == 'gpu':
       if v == False:
         config.cnn_format = 'NHWC'
@@ -72,6 +72,6 @@ def get_config(FLAGS):
 
 
     if hasattr(config, k):
-      setattr(config, k, v)
+      setattr(config, k, v.value)
 
   return config
